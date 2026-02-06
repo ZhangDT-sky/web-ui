@@ -106,6 +106,248 @@ class CustomController(Controller):
                 logger.info(msg)
                 return ActionResult(error=msg)
 
+        """
+        按文本名点击页面元素
+        """
+        @self.registry.action(
+            'Click element by exact text content. Use this to click buttons or links when you know their text, e.g. "Submit", "Log In", "Dashboard".',
+        )
+        async def click_text(text: str, browser: BrowserContext):
+            page = await browser.get_current_page()
+            logger.info(f"🖱️ Attempting to click text: '{text}'")  # Start log
+            try:
+                # 1. Exact text match (visible only)
+                loc = page.get_by_text(text, exact=True)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    await loc.first.click()
+                    logger.info(f"✅ Clicked element with text: '{text}'")
+                    return ActionResult(extracted_content=f"Clicked element with text: '{text}'")
+                
+                # 2. Case insensitive / Partial match fallback
+                loc = page.locator(f"text=/{text}/i")
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    await loc.first.click()
+                    logger.info(f"✅ Clicked element with text (fuzzy): '{text}'")
+                    return ActionResult(extracted_content=f"Clicked element with text (fuzzy): '{text}'")
+                
+                logger.warning(f"❌ Could not find visible element with text '{text}'") # Upgraded from DEBUG
+                return ActionResult(error=f"Could not find visible element with text '{text}'")
+            except Exception as e:
+
+                logger.warning(f"Failed to click text '{text}': {str(e)}")
+                return ActionResult(error=f"Failed to click text '{text}': {str(e)}")
+
+        """
+        处理悬停方式菜单栏
+        """
+        @self.registry.action(
+            'Hover over element by exact text content.',
+        )
+        async def hover_text(text: str, browser: BrowserContext):
+            page = await browser.get_current_page()
+            try:
+                loc = page.get_by_text(text, exact=True)
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    await loc.first.hover()
+                    logger.info(f"Hovered over element with text: '{text}'")
+                    return ActionResult(extracted_content=f"Hovered over element with text: '{text}'")
+                
+                loc = page.locator(f"text=/{text}/i")
+                if await loc.count() > 0 and await loc.first.is_visible():
+                    await loc.first.hover()
+                    logger.info(f"Hovered over element with text: '{text}'")
+                    return ActionResult(extracted_content=f"Hovered over element with text (fuzzy): '{text}'")
+                
+                return ActionResult(error=f"Could not find visible element with text '{text}'")
+            except Exception as e:
+                logger.warning(f"Failed to hover text '{text}': {str(e)}")
+                return ActionResult(error=f"Failed to hover text '{text}': {str(e)}")
+
+        """
+        获取当前页面URL
+        """
+        @self.registry.action(
+            'Get the current page URL. Use this to extract the URL after navigation.',
+        )
+        async def get_current_url(browser: BrowserContext):
+            try:
+                page = await browser.get_current_page()
+                url = page.url
+                logger.info(f"🔗 Extracted URL: {url}")
+                return ActionResult(extracted_content=f"Current URL: {url}")
+            except Exception as e:
+                logger.warning(f"Failed to get current URL: {str(e)}")
+                return ActionResult(error=f"Failed to get current URL: {str(e)}")
+
+
+        """
+        保存为导航树
+        """
+        @self.registry.action(
+            'Save the navigation structure to a specific JSON file. Use this after extracting the structure in Step 2. '
+            'Returns the filename used (e.g., nav_task_20231027_120000.json). '
+            'You MUST remember this filename for subsequent steps.'
+        )
+        async def save_navigation_structure(structure: str, browser: BrowserContext):
+            try:
+                import json
+                import time
+                import ast
+                
+                # Generate unique filename based on time
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                filename = f"nav_task_{timestamp}.json"
+                filepath = os.path.join(os.getcwd(), filename)
+                
+                # Helper to flatten the tree
+                flat_tasks = []
+                def extract_nodes(nodes, parent_path=[]):
+                    for node in nodes:
+                        # Handle string nodes (leaf items in a list, e.g., from 'group' arrays)
+                        if isinstance(node, str):
+                            flat_tasks.append({
+                                "id": f"task_{len(flat_tasks)}",
+                                "name": node,
+                                "path": parent_path + [node],
+                                "url": "",
+                                "status": "pending"
+                            })
+                            continue
+                        
+                        # Handle dict nodes
+                        # Support multiple keys for name/label (including Agent's extract_content variations)
+                        node_name = (node.get('name') or node.get('label') or node.get('text') or 
+                                    node.get('menu_item') or node.get('submenu_item') or 'Unknown')
+                        current_path = parent_path + [node_name]
+                        # Support multiple keys for children (including Agent's extract_content variations)
+                        children = (node.get('children') or node.get('submenus') or node.get('submenu') or 
+                                   node.get('items') or node.get('sub_items') or node.get('submenu_items') or 
+                                   node.get('group') or node.get('sub_submenu') or [])
+                        
+                        if not children:
+                            flat_tasks.append({
+                                "id": f"task_{len(flat_tasks)}",
+                                "name": node_name,
+                                "path": current_path,
+                                "url": node.get('url', ''),
+                                "status": "pending"  # pending, done, failed
+                            })
+                        else:
+                            extract_nodes(children, current_path)
+
+                # Parse input structure
+                if isinstance(structure, str):
+                     try:
+                         safe_data = json.loads(structure)
+                     except:
+                         try:
+                            safe_data = ast.literal_eval(structure)
+                         except:
+                            return ActionResult(error="Invalid JSON structure provided")
+                else:
+                    safe_data = structure
+
+                # Handle Dict input (unwrap recursively to find the list)
+                root_nodes = safe_data
+                if isinstance(safe_data, dict):
+                    def find_list(d):
+                        for key, value in d.items():
+                            if isinstance(value, list):
+                                return value
+                            if isinstance(value, dict):
+                                result = find_list(value)
+                                if result:
+                                    return result
+                        return None
+
+                    found_list = find_list(safe_data)
+                    if found_list:
+                        root_nodes = found_list
+                    else:
+                        return ActionResult(error="Invalid structure: Could not find a list of navigation items in the provided dictionary.")
+
+                if not isinstance(root_nodes, list):
+                     return ActionResult(error=f"Invalid structure: Expected a list of items, got {type(root_nodes).__name__}")
+
+                extract_nodes(root_nodes)
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump({"session_id": timestamp, "tasks": flat_tasks}, f, ensure_ascii=False, indent=2)
+                    
+                logger.info(f"💾 Navigation structure saved to {filename}")
+                return ActionResult(extracted_content=f"Structure saved to {filename}. Total tasks: {len(flat_tasks)}")
+            except Exception as e:
+                return ActionResult(error=f"Failed to save structure: {str(e)}")
+
+        """
+        获取下一个执行任务
+        """
+        @self.registry.action(
+            'Get the next pending task from the saved navigation file. Requires the filename.',
+        )
+        async def get_next_task(filename: str, browser: BrowserContext):
+            try:
+                import json
+                filepath = os.path.join(os.getcwd(), filename)
+
+                if not os.path.exists(filepath):
+                     return ActionResult(error=f"File {filename} not found.")
+
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                tasks = data.get("tasks", [])
+                # Find the first pending task
+                next_task = next((t for t in tasks if t["status"] == "pending"), None)
+
+                if next_task:
+                    return ActionResult(extracted_content=json.dumps(next_task))
+                else:
+                    return ActionResult(extracted_content="ALL_TASKS_COMPLETED")
+
+            except Exception as e:
+                return ActionResult(error=f"Failed to read next task: {str(e)}")
+
+        """
+        更新菜单项状态
+        """
+        @self.registry.action(
+            'Mark a task as completed (or failed) in the saved file. Optionally record the extracted URL.',
+        )
+        async def update_task_status(filename: str, task_id: str, status: str, browser: BrowserContext, result_url: str = ""):
+            try:
+                import json
+                filepath = os.path.join(os.getcwd(), filename)
+
+                if not os.path.exists(filepath):
+                     return ActionResult(error=f"File {filename} not found.")
+
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                updated = False
+                for t in data["tasks"]:
+                    if t["id"] == task_id:
+                        t["status"] = status
+                        if result_url:
+                            t["url"] = result_url  # Update or set the URL
+                        updated = True
+                        break
+
+                if updated:
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+                    return ActionResult(extracted_content=f"Task {task_id} marked as {status}. URL updated: {bool(result_url)}")
+                else:
+                    return ActionResult(error=f"Task {task_id} not found")
+            except Exception as e:
+                return ActionResult(error=f"Failed to update task: {str(e)}")
+
+
+    """
+    分析功能 - 提取
+    """
+
     @time_execution_sync('--act')
     async def act(
             self,
