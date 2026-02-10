@@ -118,17 +118,23 @@ class CustomController(Controller):
             try:
                 # 1. Exact text match (visible only)
                 loc = page.get_by_text(text, exact=True)
-                if await loc.count() > 0 and await loc.first.is_visible():
-                    await loc.first.click()
-                    logger.info(f"✅ Clicked element with text: '{text}'")
-                    return ActionResult(extracted_content=f"Clicked element with text: '{text}'")
+                count = await loc.count()
+                for i in range(count):
+                    item = loc.nth(i)
+                    if await item.is_visible():
+                        await item.click()
+                        logger.info(f"✅ Clicked element with text: '{text}'")
+                        return ActionResult(extracted_content=f"Clicked element with text: '{text}'")
                 
                 # 2. Case insensitive / Partial match fallback
                 loc = page.locator(f"text=/{text}/i")
-                if await loc.count() > 0 and await loc.first.is_visible():
-                    await loc.first.click()
-                    logger.info(f"✅ Clicked element with text (fuzzy): '{text}'")
-                    return ActionResult(extracted_content=f"Clicked element with text (fuzzy): '{text}'")
+                count = await loc.count()
+                for i in range(count):
+                    item = loc.nth(i)
+                    if await item.is_visible():
+                        await item.click()
+                        logger.info(f"✅ Clicked element with text (fuzzy): '{text}'")
+                        return ActionResult(extracted_content=f"Clicked element with text (fuzzy): '{text}'")
                 
                 logger.warning(f"❌ Could not find visible element with text '{text}'") # Upgraded from DEBUG
                 return ActionResult(error=f"Could not find visible element with text '{text}'")
@@ -148,16 +154,22 @@ class CustomController(Controller):
             logger.info(f"Attempting to hover text: '{text}'")
             try:
                 loc = page.get_by_text(text, exact=True)
-                if await loc.count() > 0 and await loc.first.is_visible():
-                    await loc.first.hover()
-                    logger.info(f"✅ Hovered over element with text: '{text}'")
-                    return ActionResult(extracted_content=f"Hovered over element with text: '{text}'")
+                count = await loc.count()
+                for i in range(count):
+                    item = loc.nth(i)
+                    if await item.is_visible():
+                        await item.hover()
+                        logger.info(f"✅ Hovered over element with text: '{text}'")
+                        return ActionResult(extracted_content=f"Hovered over element with text: '{text}'")
                 
                 loc = page.locator(f"text=/{text}/i")
-                if await loc.count() > 0 and await loc.first.is_visible():
-                    await loc.first.hover()
-                    logger.info(f"✅ Hovered over element with text (fuzzy): '{text}'")
-                    return ActionResult(extracted_content=f"Hovered over element with text (fuzzy): '{text}'")
+                count = await loc.count()
+                for i in range(count):
+                    item = loc.nth(i)
+                    if await item.is_visible():
+                        await item.hover()
+                        logger.info(f"✅ Hovered over element with text (fuzzy): '{text}'")
+                        return ActionResult(extracted_content=f"Hovered over element with text (fuzzy): '{text}'")
                 
                 logger.warning(f"❌ Could not find visible element with text '{text}'")
                 return ActionResult(error=f"Could not find visible element with text '{text}'")
@@ -228,15 +240,16 @@ class CustomController(Controller):
                                    node.get('items') or node.get('sub_items') or node.get('submenu_items') or 
                                    node.get('group') or node.get('sub_submenu') or [])
                         
-                        if not children:
-                            flat_tasks.append({
-                                "id": f"task_{len(flat_tasks)}",
-                                "name": node_name,
-                                "path": current_path,
-                                "url": node.get('url', ''),
-                                "status": "pending"  # pending, done, failed
-                            })
-                        else:
+                        # Always add the current node as a task, even if it has children
+                        flat_tasks.append({
+                            "id": f"task_{len(flat_tasks)}",
+                            "name": node_name,
+                            "path": current_path,
+                            "url": node.get('url', ''),
+                            "status": "pending"  # pending, done, failed
+                        })
+                        
+                        if children:
                             extract_nodes(children, current_path)
 
                 # Parse input structure
@@ -342,7 +355,12 @@ class CustomController(Controller):
                     if t["id"] == task_id:
                         t["status"] = status
                         if result_url:
-                            t["url"] = result_url  # Update or set the URL
+                            # Filter out Dashboard URLs (parent menus that just expand)
+                            clean_url = result_url.strip()
+                            if ("publisher/dashboard" in clean_url) or clean_url.endswith("/publisher") or clean_url.endswith("/publisher/"):
+                                t["url"] = ""  # Treat as no URL change
+                            else:
+                                t["url"] = clean_url
                         updated = True
                         break
 
