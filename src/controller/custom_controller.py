@@ -145,23 +145,25 @@ class CustomController(Controller):
         )
         async def hover_text(text: str, browser: BrowserContext):
             page = await browser.get_current_page()
+            logger.info(f"Attempting to hover text: '{text}'")
             try:
                 loc = page.get_by_text(text, exact=True)
                 if await loc.count() > 0 and await loc.first.is_visible():
                     await loc.first.hover()
-                    logger.info(f"Hovered over element with text: '{text}'")
+                    logger.info(f"✅ Hovered over element with text: '{text}'")
                     return ActionResult(extracted_content=f"Hovered over element with text: '{text}'")
                 
                 loc = page.locator(f"text=/{text}/i")
                 if await loc.count() > 0 and await loc.first.is_visible():
                     await loc.first.hover()
-                    logger.info(f"Hovered over element with text: '{text}'")
+                    logger.info(f"✅ Hovered over element with text (fuzzy): '{text}'")
                     return ActionResult(extracted_content=f"Hovered over element with text (fuzzy): '{text}'")
                 
+                logger.warning(f"❌ Could not find visible element with text '{text}'")
                 return ActionResult(error=f"Could not find visible element with text '{text}'")
             except Exception as e:
                 logger.warning(f"Failed to hover text '{text}': {str(e)}")
-                return ActionResult(error=f"Failed to hover text '{text}': {str(e)}")
+                return ActionResult(error=f"❌ Failed to hover text '{text}': {str(e)}")
 
         """
         获取当前页面URL
@@ -197,7 +199,9 @@ class CustomController(Controller):
                 # Generate unique filename based on time
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
                 filename = f"nav_task_{timestamp}.json"
-                filepath = os.path.join(os.getcwd(), filename)
+                nav_dir = os.path.join(os.getcwd(), "nav_task")
+                os.makedirs(nav_dir, exist_ok=True)
+                filepath = os.path.join(nav_dir, filename)
                 
                 # Helper to flatten the tree
                 flat_tasks = []
@@ -288,10 +292,14 @@ class CustomController(Controller):
         async def get_next_task(filename: str, browser: BrowserContext):
             try:
                 import json
-                filepath = os.path.join(os.getcwd(), filename)
+                nav_dir = os.path.join(os.getcwd(), "nav_task")
+                filepath = os.path.join(nav_dir, filename)
 
+                # Fallback to project root for backward compatibility
                 if not os.path.exists(filepath):
-                     return ActionResult(error=f"File {filename} not found.")
+                    filepath = os.path.join(os.getcwd(), filename)
+                    if not os.path.exists(filepath):
+                        return ActionResult(error=f"File {filename} not found in nav_task/ or root directory.")
 
                 with open(filepath, 'r', encoding='utf-8') as f:
                     data = json.load(f)
@@ -317,10 +325,14 @@ class CustomController(Controller):
         async def update_task_status(filename: str, task_id: str, status: str, browser: BrowserContext, result_url: str = ""):
             try:
                 import json
-                filepath = os.path.join(os.getcwd(), filename)
+                nav_dir = os.path.join(os.getcwd(), "nav_task")
+                filepath = os.path.join(nav_dir, filename)
 
+                # Fallback to project root for backward compatibility
                 if not os.path.exists(filepath):
-                     return ActionResult(error=f"File {filename} not found.")
+                    filepath = os.path.join(os.getcwd(), filename)
+                    if not os.path.exists(filepath):
+                        return ActionResult(error=f"File {filename} not found in nav_task/ or root directory.")
 
                 with open(filepath, 'r', encoding='utf-8') as f:
                     data = json.load(f)
