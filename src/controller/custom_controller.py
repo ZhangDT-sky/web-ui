@@ -112,36 +112,60 @@ class CustomController(Controller):
         @self.registry.action(
             'Click element by exact text content. Use this to click buttons or links when you know their text, e.g. "Submit", "Log In", "Dashboard".',
         )
-        async def click_text(text: str, browser: BrowserContext):
+        async def click_element_by_text(text: str, browser: BrowserContext):
+            session = await browser.get_session()
             page = await browser.get_current_page()
-            logger.info(f"🖱️ Attempting to click text: '{text}'")  # Start log
+            initial_pages = len(session.context.pages)
+            
+            msg = None
+            
             try:
-                # 1. Exact text match (visible only)
+                # 1. Try exact text match (visible only)
                 loc = page.get_by_text(text, exact=True)
                 count = await loc.count()
                 for i in range(count):
                     item = loc.nth(i)
                     if await item.is_visible():
                         await item.click()
-                        logger.info(f"✅ Clicked element with text: '{text}'")
-                        return ActionResult(extracted_content=f"Clicked element with text: '{text}'")
+                        msg = f'🖱️  Clicked element with exact text: "{text}"'
+                        logger.info(msg)
+                        
+                        # Check if new tab opened
+                        if len(session.context.pages) > initial_pages:
+                            new_tab_msg = 'New tab opened - switching to it'
+                            msg += f' - {new_tab_msg}'
+                            logger.info(new_tab_msg)
+                            await browser.switch_to_tab(-1)
+                        
+                        return ActionResult(extracted_content=msg, include_in_memory=True)
                 
-                # 2. Case insensitive / Partial match fallback
+                # 2. Fallback: case insensitive / partial match
                 loc = page.locator(f"text=/{text}/i")
                 count = await loc.count()
                 for i in range(count):
                     item = loc.nth(i)
                     if await item.is_visible():
                         await item.click()
-                        logger.info(f"✅ Clicked element with text (fuzzy): '{text}'")
-                        return ActionResult(extracted_content=f"Clicked element with text (fuzzy): '{text}'")
+                        msg = f'🖱️  Clicked element with fuzzy text match: "{text}"'
+                        logger.info(msg)
+                        
+                        # Check if new tab opened
+                        if len(session.context.pages) > initial_pages:
+                            new_tab_msg = 'New tab opened - switching to it'
+                            msg += f' - {new_tab_msg}'
+                            logger.info(new_tab_msg)
+                            await browser.switch_to_tab(-1)
+                        
+                        return ActionResult(extracted_content=msg, include_in_memory=True)
                 
-                logger.warning(f"❌ Could not find visible element with text '{text}'") # Upgraded from DEBUG
-                return ActionResult(error=f"Could not find visible element with text '{text}'")
+                # Element not found
+                logger.warning(f'Element with text "{text}" not found or not visible')
+                raise Exception(f'Element with text "{text}" does not exist or is not visible - retry or use alternative actions')
+                
             except Exception as e:
+                logger.warning(f'Element not clickable with text "{text}" - {str(e)}')
+                return ActionResult(error=str(e))
 
-                logger.warning(f"Failed to click text '{text}': {str(e)}")
-                return ActionResult(error=f"Failed to click text '{text}': {str(e)}")
 
         """
         处理悬停方式菜单栏
@@ -149,33 +173,43 @@ class CustomController(Controller):
         @self.registry.action(
             'Hover over element by exact text content.',
         )
-        async def hover_text(text: str, browser: BrowserContext):
+        async def hover_element_by_text(text: str, browser: BrowserContext):
+            session = await browser.get_session()
             page = await browser.get_current_page()
-            logger.info(f"Attempting to hover text: '{text}'")
+            
+            msg = None
+            
             try:
+                # 1. Try exact text match (visible only)
                 loc = page.get_by_text(text, exact=True)
                 count = await loc.count()
                 for i in range(count):
                     item = loc.nth(i)
                     if await item.is_visible():
                         await item.hover()
-                        logger.info(f"✅ Hovered over element with text: '{text}'")
-                        return ActionResult(extracted_content=f"Hovered over element with text: '{text}'")
+                        msg = f'🫳  Hovered over element with exact text: "{text}"'
+                        logger.info(msg)
+                        return ActionResult(extracted_content=msg, include_in_memory=True)
                 
+                # 2. Fallback: case insensitive / partial match
                 loc = page.locator(f"text=/{text}/i")
                 count = await loc.count()
                 for i in range(count):
                     item = loc.nth(i)
                     if await item.is_visible():
                         await item.hover()
-                        logger.info(f"✅ Hovered over element with text (fuzzy): '{text}'")
-                        return ActionResult(extracted_content=f"Hovered over element with text (fuzzy): '{text}'")
+                        msg = f'🫳  Hovered over element with fuzzy text match: "{text}"'
+                        logger.info(msg)
+                        return ActionResult(extracted_content=msg, include_in_memory=True)
                 
-                logger.warning(f"❌ Could not find visible element with text '{text}'")
-                return ActionResult(error=f"Could not find visible element with text '{text}'")
+                # Element not found
+                logger.warning(f'Element with text "{text}" not found or not visible')
+                raise Exception(f'Element with text "{text}" does not exist or is not visible - retry or use alternative actions')
+                
             except Exception as e:
-                logger.warning(f"Failed to hover text '{text}': {str(e)}")
-                return ActionResult(error=f"❌ Failed to hover text '{text}': {str(e)}")
+                logger.warning(f'Element not hoverable with text "{text}" - {str(e)}')
+                return ActionResult(error=str(e))
+
 
         """
         获取当前页面URL
@@ -357,7 +391,7 @@ class CustomController(Controller):
                         if result_url:
                             # Filter out Dashboard URLs (parent menus that just expand)
                             clean_url = result_url.strip()
-                            if ("publisher/dashboard" in clean_url) or clean_url.endswith("/publisher") or clean_url.endswith("/publisher/"):
+                            if ("publisher/dashboard" in clean_url) or clean_url.endswith("/publisher") or clean_url.endswith("/publisher/") or clean_url.endswith("/login"):
                                 t["url"] = ""  # Treat as no URL change
                             else:
                                 t["url"] = clean_url
