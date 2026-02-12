@@ -8,6 +8,8 @@ from playwright.async_api import Browser as PlaywrightBrowser
 from playwright.async_api import BrowserContext as PlaywrightBrowserContext
 from typing import Optional
 from browser_use.browser.context import BrowserContextState
+from playwright.async_api import TimeoutError
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,37 @@ class CustomBrowserContext(BrowserContext):
         # Inject cursor visualization script
         await context.add_init_script(CURSOR_JS)
         return context
+
+    async def take_screenshot(self, full_page: bool = False, **kwargs) -> str:
+        """
+        处理截图超时问题，避免截图超时导致模型幻觉
+        """
+        try:
+            page = await self.get_current_page()
+            
+            if not page:
+                return ""
+                
+            # 60秒超时
+            timeout = kwargs.get('timeout', 60000)
+            
+            buffer = await page.screenshot(
+                full_page=full_page,
+                timeout=timeout,
+                type='jpeg',
+                animations='disabled',
+                quality=75 
+            )
+            
+            return base64.b64encode(buffer).decode('utf-8')
+            
+        except TimeoutError:
+            # 超时返回空字符串
+            logger.warning(f"⚠️ CustomContext: Screenshot timed out after {kwargs.get('timeout', 60000)}ms. Returning empty.")
+            return ""
+        except Exception as e:
+            logger.error(f"⚠️ CustomContext: Screenshot failed: {e}")
+            return ""
 
 
 print("LOADING CUSTOM CONTEXT MODULE...")
