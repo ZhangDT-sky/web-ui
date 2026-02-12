@@ -56,11 +56,18 @@
     - **禁止**：本轮**不要**调用 `go_back` 或 `update_task_status`。
     - **禁止**：**严禁**使用 `scroll` 或 `extract_content` 尝试寻找元素。如果找不到目标元素，直接失败并进入 Phase 2。
     
-3.  **【停止】**：本轮结束，等待观察页面跳转结果。
+3.  **数据捕获**: 执行完点击并等待后，作为 **Phase 1 的最后一个动作**，立即运行 `get_current_url()`。
+    -   **严禁**在此 Step 调用 `update_task_status`！你必须先看到 URL，才能在下一步决定状态。
+    -   **【停止】**：本轮结束，等待观察页面跳转结果。
 
 **第二轮：记录与归位 (Phase 2)**
-1.  **强制核销 (Mandatory Update)**：
-    -   即使 URL **没有变化**（如只是展开了菜单），也**必须**调用 `update_task_status(..., status="done", result_url="当前URL")`。
+1.  **观测检查**:
+    -   查看 Phase 1 的 `Observation` 结果（即 `get_current_url` 返回的实际 URL）。
+    -   **对比**: 该 URL 是否与预期一致？如果依然是 Dashboard (`.../publisher`)，说明点击失败！
+
+2.  **强制核销**:
+    -   即使 URL **没有变化**，也**必须**调用 `update_task_status(..., status="done", result_url="COPY_PASTE_OBSERVED_URL")`。
+    -   **警告**: `result_url` 参数**必须**直接复制 Phase 1 的观测结果。**严禁**凭空捏造或预测 URL。
     -   **严禁连续操作！** 完成一个菜单项后，**禁止**直接凭记忆（Memory）去点下一个。
     -   **必须**调用 `update_task_status` 才能结束当前 Task。
 

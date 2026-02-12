@@ -4,7 +4,7 @@
 
 ## ⚠️ 关键操作 (必须遵守)
 1. **强制等待**：
-   - `click_text` 后：`wait(1)`
+   - `click_element_by_text` 后：`wait(1)`
    - `go_back` 后：**必须 wait(3)** (等待页面完全加载)
 2. **状态管理**：必须使用 `save_navigation_structure`、`get_next_task` 和 `update_task_status` 来驱动流程。
 3. 在 Step 2 之后，**严禁**凭此前的上下文记忆去点击，**必须**依赖 `get_next_task` 返回的内容。
@@ -38,9 +38,9 @@
    - **原子化操作**：必须按照路径层级依次点击。
    - **功能按钮过滤**：如果任务名称匹配 `^(Add|Edit|Delete|Upload|New|Copy|Save|Submit|Cancel).*`，**跳过此任务**，标记为 "skipped"，不要点击。
    - **如果 Path 长度 > 1 (如 ["Tools", "Link Generator"])**：
-     - `click_text(path[0])` (点击一级菜单，确保展开) -> `wait(1)` -> `click_text(path[1])` (点击目标) -> `wait(1)`。
+     - `click_element_by_text(path[0])` (点击一级菜单，确保展开) -> `wait(1)` -> `click_element_by_text(path[1])` (点击目标) -> `wait(1)`。
    - **如果 Path 长度 = 1**：
-     - `click_text(path[0])` -> `wait(1)`。
+     - `click_element_by_text(path[0])` -> `wait(1)`。
    - **严禁**直接点击子菜单而跳过父菜单。
 3. **观测 URL**：调用 `get_current_url()`。
 4. **【停止】**：不要在这一轮调用 `update_task_status`，等待观察结果。

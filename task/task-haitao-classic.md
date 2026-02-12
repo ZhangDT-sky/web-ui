@@ -4,7 +4,7 @@
 
 ## ⚠️ 关键操作 (必须遵守)
 1. **强制等待**：
-   - `click_text` 后：`wait(1)`
+   - `click_element_by_text` 后：`wait(1)`
    - `go_to_url` 后：`wait(1)`
    - 提取结构前：`wait(2)`
 2. **绝对归位**：
@@ -12,8 +12,8 @@
 3. **禁止**：
    - **禁止**凭空猜想，必须基于 Step 2 看到的实际结构执行。
    - **禁止**在动作列表（Action List）中间使用 `click_element_by_index`。该工具**仅允许**作为 Step 的第一个动作使用。
-     - ✅ **正确**：`click_element_by_index(10)` -> `click_text("Submenu")` (Index 在首位，安全)
-     - ❌ **错误**：`click_text("Menu")` -> `click_element_by_index(10)` (Index 在中间，**绝对禁止**！因为点击 "Menu" 后 DOM 结构变了，原 Index 10 可能指向错误的元素)
+     - ✅ **正确**：`click_element_by_index(10)` -> `click_element_by_text("Submenu")` (Index 在首位，安全)
+     - ❌ **错误**：`click_element_by_text("Menu")` -> `click_element_by_index(10)` (Index 在中间，**绝对禁止**！因为点击 "Menu" 后 DOM 结构变了，原 Index 10 可能指向错误的元素)
 
 ---
 
@@ -54,7 +54,7 @@
     - **必须**在一个 Step 内提交以下动作序列（Batch Action）：
     - **模式**：`click_element_by_index(...)` (仅限首位) -> `wait(1)` -> ... -> `get_current_url()`。
     - **示例**：
-      `click_element_by_index(15)` -> `wait(1)` -> `click_text("Link Generator")` -> `wait(2)` -> `get_current_url()`
+      `click_element_by_index(15)` -> `wait(1)` -> `click_element_by_text("Link Generator")` -> `wait(2)` -> `get_current_url()`
     - **禁止**：本轮**不要**调用 `go_to_url` 或 `update_task_status`。
 3.  **【停止】**：本轮结束，等待观察页面跳转结果。
 
