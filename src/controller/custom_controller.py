@@ -227,6 +227,23 @@ class CustomController(Controller):
                 logger.warning(f"Failed to get current URL: {str(e)}")
                 return ActionResult(error=f"Failed to get current URL: {str(e)}")
 
+        """
+        等待网络空闲
+        """
+        @self.registry.action(
+            'Wait for the network to be idle. Use this after clicks or tab switches to ensure the page is fully loaded. '
+            'Default timeout is 5 seconds.',
+        )
+        async def wait_for_network_idle(browser: BrowserContext, timeout: int = 5000):
+            try:
+                page = await browser.get_current_page()
+                await page.wait_for_load_state('networkidle', timeout=timeout)
+                logger.info("🌐 Network is idle.")
+                return ActionResult(extracted_content="Network is idle.")
+            except Exception as e:
+                logger.warning(f"Wait for network idle timed out or failed: {str(e)}")
+                return ActionResult(extracted_content="Network idle wait timeout (proceeding anyway)")
+
 
         """
         保存为导航树
@@ -407,6 +424,116 @@ class CustomController(Controller):
             except Exception as e:
                 return ActionResult(error=f"Failed to update task: {str(e)}")
 
+        """
+        增量更新导航结构
+        """
+        @self.registry.action(
+            'Update the navigation structure incrementally. Use this to add new sub-menus or correct existing items mid-task. '
+            'It matches items by their "path". If path exists, it overrides; if not, it appends. '
+            'Requires the filename and the new structure (list or dict).'
+        )
+        async def update_navigation_structure(filename: str, structure: str, browser: BrowserContext):
+            try:
+                import json
+                import ast
+                nav_dir = os.path.join(os.getcwd(), "nav_task")
+                filepath = os.path.join(nav_dir, filename)
+
+                if not os.path.exists(filepath):
+                    return ActionResult(error=f"File {filename} not found.")
+
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                existing_tasks = data.get("tasks", [])
+                
+                # Helper to parse input structure
+                new_nodes = []
+                if isinstance(structure, str):
+                     try:
+                         safe_data = json.loads(structure)
+                     except:
+                         try:
+                            safe_data = ast.literal_eval(structure)
+                         except:
+                            return ActionResult(error="Invalid JSON structure provided")
+                else:
+                    safe_data = structure
+
+                # Handle Dict input (unwrap recursively to find the list)
+                root_nodes = safe_data
+                if isinstance(safe_data, dict):
+                    def find_list(d):
+                        for key, value in d.items():
+                            if isinstance(value, list):
+                                return value
+                            if isinstance(value, dict):
+                                result = find_list(value)
+                                if result:
+                                    return result
+                        return None
+                    root_nodes = find_list(safe_data) or []
+
+                if not isinstance(root_nodes, list):
+                     return ActionResult(error=f"Expected a list of items, got {type(root_nodes).__name__}")
+
+                # Flatten new nodes
+                new_tasks_flat = []
+                def extract_nodes(nodes, parent_path=[]):
+                    for node in nodes:
+                        if isinstance(node, str):
+                            new_tasks_flat.append({"name": node, "path": parent_path + [node], "url": ""})
+                            continue
+                        node_name = (node.get('name') or node.get('label') or node.get('text') or 'Unknown')
+                        current_path = parent_path + [node_name]
+                        children = (node.get('children') or node.get('submenus') or node.get('items') or [])
+                        new_tasks_flat.append({"name": node_name, "path": current_path, "url": node.get('url', '')})
+                        if children:
+                            extract_nodes(children, current_path)
+
+                extract_nodes(root_nodes)
+
+                # Merge logic: Append or Override
+                updated_count = 0
+                added_count = 0
+                
+                # Use path as unique key (converted to string for dict lookup)
+                path_to_task = {str(t["path"]): t for t in existing_tasks}
+
+                for nt in new_tasks_flat:
+                    path_str = str(nt["path"])
+                    if path_str in path_to_task:
+                        # Override existing (only if values differ)
+                        task = path_to_task[path_str]
+                        if task["name"] != nt["name"]:
+                            task["name"] = nt["name"]
+                            updated_count += 1
+                        # If URL was empty but new one is not, update it
+                        if not task.get("url") and nt["url"]:
+                            task["url"] = nt["url"]
+                            updated_count += 1
+                    else:
+                        # Append new
+                        new_id = f"task_{len(existing_tasks)}"
+                        new_entry = {
+                            "id": new_id,
+                            "name": nt["name"],
+                            "path": nt["path"],
+                            "url": nt["url"],
+                            "status": "pending"
+                        }
+                        existing_tasks.append(new_entry)
+                        path_to_task[path_str] = new_entry
+                        added_count += 1
+
+                data["tasks"] = existing_tasks
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+
+                return ActionResult(extracted_content=f"Incremental update complete. Added: {added_count}, Updated: {updated_count}. Total tasks: {len(existing_tasks)}")
+            except Exception as e:
+                return ActionResult(error=f"Failed to incrementally update structure: {str(e)}")
+
 
     """
     分析功能 - 提取
@@ -431,7 +558,6 @@ class CustomController(Controller):
                 if params is not None:
                     if action_name.startswith("mcp"):
                         # this is a mcp tool
-                        logger.debug(f"Invoke MCP tool: {action_name}")
                         mcp_tool = self.registry.registry.actions.get(action_name).function
                         result = await mcp_tool.ainvoke(params)
                     else:
