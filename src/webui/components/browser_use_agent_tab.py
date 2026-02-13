@@ -141,9 +141,9 @@ async def _handle_new_step(
         logger.error(
             "Attribute 'bu_chat_history' not found in webui_manager! Cannot add chat message."
         )
-        # Initialize it maybe? Or raise an error? For now, log and potentially skip chat update.
         webui_manager.bu_chat_history = []  # Initialize if missing (consider if this is the right place)
         # return # Or stop if this is critical
+
     step_num -= 1
     logger.info(f"Step {step_num} completed.")
 
